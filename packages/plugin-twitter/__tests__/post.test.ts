@@ -1,205 +1,234 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { postAction } from '../src/actions/post';
-import { ModelClass, type IAgentRuntime, type Memory, type State, generateObject } from '@elizaos/core';
-import { TweetContent, TweetSchema } from '../src/types';
-import { tweetTemplate } from '../src/templates';
-import type { UUID } from '../../core/src/types';
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { TwitterPostClient } from "../src/post";
+import { ClientBase } from "../src/base";
+import type { IAgentRuntime } from "@elizaos/core";
+import type { TwitterConfig } from "../src/environment";
+import { truncateToCompleteSentence, logger } from "@elizaos/core";
 
-// Mock @elizaos/core
-vi.mock('@elizaos/core', async () => {
-    const actual = await vi.importActual('@elizaos/core');
-    return {
-        ...actual,
-        generateObject: vi.fn().mockImplementation(async ({ schema }) => {
-            if (schema === TweetSchema) {
-                return {
-                    object: {
-                        text: 'Test tweet content'
-                    },
-                    raw: 'Test tweet content'
-                };
-            }
-            return null;
-        }),
-        composeContext: vi.fn().mockImplementation(({ state, template }) => {
-            // Return a properly formatted context that matches the template format
-            return {
-                state: {
-                    ...state,
-                    recentMessages: state?.recentMessages || [],
-                    topics: state?.topics || [],
-                    postDirections: state?.postDirections || '',
-                    agentName: state?.agentName || 'TestAgent',
-                },
-                template,
-                result: template.replace(/{{(\w+)}}/g, (_, key) => state?.[key] || key)
-            };
-        }),
-        formatMessages: vi.fn().mockImplementation((messages) => messages),
-        elizaLogger: {
-            log: vi.fn(),
-            error: vi.fn(),
-            warn: vi.fn(),
-            info: vi.fn(),
+const MAX_TWITTER_POST_LENGTH = 280;
+
+vi.mock("@elizaos/core", async () => {
+  const actual = await vi.importActual<typeof import("@elizaos/core")>(
+    "@elizaos/core"
+  );
+
+  return {
+    ...actual,
+    logger: {
+      log: vi.fn(),
+      info: vi.fn(),
+      error: vi.fn(),
+      debug: vi.fn(),
+      warn: vi.fn(),
+    },
+    generateText: vi
+      .fn()
+      .mockResolvedValue(`{"text": "mock text", "action": "mock-action"}`),
+  };
+});
+
+describe("Twitter Post Client", () => {
+  let mockRuntime: IAgentRuntime;
+  let mockConfig: TwitterConfig;
+  let baseClient: ClientBase;
+  let postClient: TwitterPostClient;
+
+  beforeEach(() => {
+    mockRuntime = {
+      env: {
+        TWITTER_USERNAME: "testuser",
+        TWITTER_DRY_RUN: "true",
+        TWITTER_POST_INTERVAL_MIN: "5",
+        TWITTER_POST_INTERVAL_MAX: "10",
+        TWITTER_ENABLE_ACTION_PROCESSING: "true",
+        TWITTER_POST_IMMEDIATELY: "false",
+        TWITTER_EMAIL: "test@example.com",
+        TWITTER_PASSWORD: "hashedpassword",
+        TWITTER_2FA_SECRET: "",
+        TWITTER_POLL_INTERVAL: "120",
+        TWITTER_RETRY_LIMIT: "5",
+      },
+      getEnv: function (key: string) {
+        return this.env[key] || null;
+      },
+      getSetting: function (key: string) {
+        return this.env[key] || null;
+      },
+      cacheManager: {
+        get: vi.fn().mockResolvedValue(null),
+        set: vi.fn().mockResolvedValue(true),
+      },
+      messageManager: {
+        createMemory: vi.fn().mockResolvedValue(true),
+      },
+      composeState: vi.fn(),
+      composeContext: vi.fn(),
+      ensureUserExists: vi.fn().mockResolvedValue(true),
+      ensureRoomExists: vi.fn().mockResolvedValue(true),
+      ensureParticipantInRoom: vi.fn().mockResolvedValue(true),
+      character: {
+        templates: {
+          twitterPostTemplate: "Mock template",
         },
-        ModelClass: actual.ModelClass
-    };
-});
+        topics: [],
+      },
+    } as unknown as IAgentRuntime;
 
-// Create mock Scraper class
-const mockScraper = {
-    login: vi.fn().mockResolvedValue(true),
-    isLoggedIn: vi.fn().mockResolvedValue(true),
-    sendTweet: vi.fn().mockResolvedValue({
-        json: () => Promise.resolve({
-            data: {
-                create_tweet: {
-                    tweet_results: {
-                        result: {
-                            id: '123',
-                            text: 'Test tweet content'
-                        }
-                    }
-                }
-            }
-        })
-    }),
-};
-
-// Mock the agent-twitter-client
-vi.mock('agent-twitter-client', () => ({
-    Scraper: vi.fn().mockImplementation(() => mockScraper)
-}));
-
-// Mock environment variables
-const originalEnv = process.env;
-beforeEach(() => {
-    vi.resetModules();
-    process.env = {
-        ...originalEnv,
-        TWITTER_USERNAME: 'test_user',
-        TWITTER_PASSWORD: 'test_pass',
-        TWITTER_EMAIL: 'test@example.com',
-        TWITTER_DRY_RUN: 'true'
+    mockConfig = {
+      TWITTER_USERNAME: "testuser",
+      TWITTER_DRY_RUN: true,
+      TWITTER_SPACES_ENABLE: false,
+      TWITTER_TARGET_USERS: [],
+      TWITTER_PASSWORD: "hashedpassword",
+      TWITTER_EMAIL: "test@example.com",
+      TWITTER_2FA_SECRET: "",
+      TWITTER_RETRY_LIMIT: 5,
+      TWITTER_POLL_INTERVAL: 120,
+      TWITTER_POST_INTERVAL_MIN: 5,
+      TWITTER_POST_INTERVAL_MAX: 10,
+      TWITTER_ENABLE_POST_GENERATION: true,
+      TWITTER_POST_IMMEDIATELY: false,
     };
 
-    // Reset mock implementations
-    mockScraper.login.mockResolvedValue(true);
-    mockScraper.isLoggedIn.mockResolvedValue(true);
-    mockScraper.sendTweet.mockResolvedValue({
-        json: () => Promise.resolve({
-            data: {
-                create_tweet: {
-                    tweet_results: {
-                        result: {
-                            id: '123',
-                            text: 'Test tweet content'
-                        }
-                    }
-                }
-            }
-        })
-    });
-});
+    baseClient = new ClientBase(mockRuntime, mockConfig);
+    baseClient.profile = {
+      screenName: "Mock Screen Name",
+      username: "mockuser",
+      id: "mock-id",
+      bio: "Mock bio for testing.",
+      nicknames: ["MockNickname"],
+    };
+  
+    postClient = new TwitterPostClient(baseClient, mockRuntime, mockConfig);
+  });
 
-afterEach(() => {
-    process.env = originalEnv;
-    vi.clearAllMocks();
-});
+  it("should create post client instance", () => {
+    expect(postClient).toBeDefined();
+    expect(postClient.twitterUsername).toBe("testuser");
+    expect(postClient["isDryRun"]).toBe(true);
+  });
 
-describe('Twitter Post Action', () => {
-    const mockRuntime: IAgentRuntime = {
-        generateObject: vi.fn().mockImplementation(async ({ schema }) => {
-            if (schema === TweetSchema) {
-                return {
-                    object: {
-                        text: 'Test tweet content'
-                    },
-                    raw: 'Test tweet content'
-                };
-            }
-            return null;
-        }),
-        getMemory: vi.fn(),
-        getState: vi.fn(),
-        setState: vi.fn(),
-        getPlugin: vi.fn(),
-        getPlugins: vi.fn(),
-        getAction: vi.fn(),
-        getActions: vi.fn(),
-        getModel: vi.fn(),
-        getModels: vi.fn(),
-        getEmbedding: vi.fn(),
-        getEmbeddings: vi.fn(),
-        getTemplate: vi.fn(),
-        getTemplates: vi.fn(),
-        getCharacter: vi.fn(),
-        getCharacters: vi.fn(),
-        getPrompt: vi.fn(),
-        getPrompts: vi.fn(),
-        getPromptTemplate: vi.fn(),
-        getPromptTemplates: vi.fn(),
-        getPromptModel: vi.fn(),
-        getPromptModels: vi.fn(),
+  it("should keep tweets under max length when already valid", () => {
+    const validTweet = "This is a valid tweet";
+    const result = truncateToCompleteSentence(
+      validTweet,
+      MAX_TWITTER_POST_LENGTH
+    );
+    expect(result).toBe(validTweet);
+    expect(result.length).toBeLessThanOrEqual(280);
+  });
+
+  it("should cut at last sentence when possible", () => {
+    const longTweet =
+      "First sentence. Second sentence that is quite long. Third sentence that would make it too long.";
+    const result = truncateToCompleteSentence(
+      longTweet,
+      MAX_TWITTER_POST_LENGTH
+    );
+    const lastPeriod = result.lastIndexOf(".");
+    expect(lastPeriod).toBeGreaterThan(0);
+    expect(result.length).toBeLessThanOrEqual(280);
+  });
+
+  it("should add ellipsis when cutting within a sentence", () => {
+    const longSentence =
+      "This is an extremely long sentence without any periods that needs to be truncated because it exceeds the maximum allowed length for a tweet on the Twitter platform and therefore must be shortened";
+    const result = truncateToCompleteSentence(
+      longSentence,
+      MAX_TWITTER_POST_LENGTH
+    );
+    const lastSpace = result.lastIndexOf(" ");
+    expect(lastSpace).toBeGreaterThan(0);
+    expect(result.length).toBeLessThanOrEqual(280);
+  });
+
+  it("should call postTweet when dry run mode is disabled", async () => {
+    postClient["isDryRun"] = false;
+    const postTweetSpy = vi
+      .spyOn(postClient, "postTweet")
+      .mockResolvedValue(undefined);
+
+    await postClient.generateNewTweet();
+
+    expect(postTweetSpy).toHaveBeenCalled();
+  });
+
+  it("should NOT call postTweet in dry run mode", async () => {
+    const postTweetSpy = vi
+      .spyOn(postClient, "postTweet")
+      .mockResolvedValue(undefined);
+
+    await postClient.generateNewTweet();
+
+    expect(postTweetSpy).not.toHaveBeenCalled();
+  });
+  it("should handle Twitter API errors gracefully", async () => {
+    const mockError = new Error("Twitter API error");
+    vi.spyOn(logger, "error");
+    vi.spyOn(postClient, "sendStandardTweet").mockRejectedValue(mockError);
+
+    await expect(
+      postClient.postTweet(
+        mockRuntime,
+        baseClient,
+        "Test tweet",
+        "room-id" as any,
+        "raw tweet",
+        "testuser"
+      )
+    ).rejects.toThrow(mockError);
+
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.stringContaining("Error sending tweet:")
+    );
+  });
+
+  it("should process a tweet and cache it", async () => {
+    const tweetData = {
+      rest_id: "mock-tweet-id",
+      legacy: {
+        full_text: "Mock tweet",
+      },
     };
 
-    const mockMessage: Memory = {
-        id: '123' as UUID,
-        content: { text: 'Please tweet something' },
-        userId: '123' as UUID,
-        agentId: '123' as UUID,
-        roomId: '123' as UUID
+    const tweet = postClient.createTweetObject(
+      tweetData,
+      baseClient,
+      baseClient.profile?.username as any
+    );
+
+    await postClient.processAndCacheTweet(
+      mockRuntime,
+      baseClient,
+      tweet,
+      "room-id" as any,
+      "raw tweet"
+    );
+
+    expect(mockRuntime.cacheManager.set).toHaveBeenCalledWith(
+      `twitter/${baseClient.profile?.username}/lastPost`,
+      expect.objectContaining({ id: "mock-tweet-id" })
+    );
+  });
+
+  it("should properly construct tweet objects", () => {
+    const tweetData = {
+      rest_id: "mock-tweet-id",
+      legacy: {
+        full_text: "Mock tweet",
+      },
     };
 
-    const mockState: State = {
-        topics: ['test topic'],
-        recentMessages: "test",
-        recentPostInteractions: [],
-        postDirections: 'Be friendly',
-        agentName: 'TestAgent',
-        bio: '',
-        lore: '',
-        messageDirections: '',
-        roomId: 'ads' as UUID,
-        actors: '',
-        recentMessagesData: []
-    };
+    const tweet = postClient.createTweetObject(
+      tweetData,
+      baseClient,
+      "testuser"
+    );
 
-    describe('validate', () => {
-        it('should validate valid message content', async () => {
-            const result = await postAction.validate(
-                mockRuntime,
-                mockMessage,
-                mockState
-            );
-            expect(result).toBe(true);
-        });
-
-        it('should fail validation without credentials', async () => {
-            delete process.env.TWITTER_USERNAME;
-            delete process.env.TWITTER_PASSWORD;
-
-            const result = await postAction.validate(
-                mockRuntime,
-                mockMessage,
-                mockState
-            );
-            expect(result).toBe(false);
-        });
-    });
-
-    describe('handler', () => {
-        it('should handle API errors', async () => {
-            process.env.TWITTER_DRY_RUN = 'false';
-            mockScraper.login.mockRejectedValueOnce(new Error('API Error'));
-            mockScraper.isLoggedIn.mockResolvedValueOnce(false);
-
-            const result = await postAction.handler(
-                mockRuntime,
-                mockMessage,
-                mockState
-            );
-            expect(result).toBe(false);
-        });
-    });
+    expect(tweet.id).toBe("mock-tweet-id");
+    expect(tweet.text).toBe("Mock tweet");
+    expect(tweet.permanentUrl).toBe(
+      "https://twitter.com/testuser/status/mock-tweet-id"
+    );
+  });
 });

@@ -9,9 +9,9 @@ import {
 describe("Parsing Module", () => {
     describe("parseShouldRespondFromText", () => {
         it("should parse exact matches", () => {
-            expect(parseShouldRespondFromText("[RESPOND]")).toBe("RESPOND");
-            expect(parseShouldRespondFromText("[IGNORE]")).toBe("IGNORE");
-            expect(parseShouldRespondFromText("[STOP]")).toBe("STOP");
+            expect(parseShouldRespondFromText("RESPOND")).toBe("RESPOND");
+            expect(parseShouldRespondFromText("IGNORE")).toBe("IGNORE");
+            expect(parseShouldRespondFromText("STOP")).toBe("STOP");
         });
 
         it("should handle case insensitive input", () => {
@@ -113,7 +113,7 @@ describe("Parsing Module", () => {
             const input = '```json\n{"key": "value", "number": 42}\n```';
             expect(parseJSONObjectFromText(input)).toEqual({
                 key: "value",
-                number: 42,
+                number: "42",
             });
         });
 
@@ -121,7 +121,7 @@ describe("Parsing Module", () => {
             const input = '{"key": "value", "number": 42}';
             expect(parseJSONObjectFromText(input)).toEqual({
                 key: "value",
-                number: 42,
+                number: "42",
             });
         });
 

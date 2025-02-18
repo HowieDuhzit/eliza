@@ -1,13 +1,24 @@
-import { z } from "zod";
+import type { ClientInstance } from "@elizaos/core";
+import type { ClientBase } from "./base";
+import type { TwitterInteractionClient } from "./interactions";
+import type { TwitterPostClient } from "./post";
+import type { TwitterSpaceClient } from "./spaces";
 
-export interface TweetContent {
-    text: string;
+export type MediaData = {
+    data: Buffer;
+    mediaType: string;
+};
+
+export interface ActionResponse {
+    like: boolean;
+    retweet: boolean;
+    quote?: boolean;
+    reply?: boolean;
 }
 
-export const TweetSchema = z.object({
-    text: z.string().describe("The text of the tweet"),
-});
-
-export const isTweetContent = (obj: unknown): obj is TweetContent => {
-    return TweetSchema.safeParse(obj).success;
-};
+export interface ITwitterClient extends ClientInstance {
+    client: ClientBase;
+    post: TwitterPostClient;
+    interaction: TwitterInteractionClient;
+    space?: TwitterSpaceClient;
+}

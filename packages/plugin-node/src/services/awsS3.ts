@@ -1,9 +1,9 @@
 import {
     type IAgentRuntime,
-    type IAwsS3Service,
+    type IFileService,
     Service,
     ServiceType,
-    elizaLogger,
+    logger,
 } from "@elizaos/core";
 import {
     GetObjectCommand,
@@ -24,8 +24,8 @@ interface JsonUploadResult extends UploadResult {
     key?: string; // Add storage key
 }
 
-export class AwsS3Service extends Service implements IAwsS3Service {
-    static serviceType: ServiceType = ServiceType.AWS_S3;
+export class AwsS3Service extends Service implements IFileService {
+    static serviceType: ServiceType = ServiceType.REMOTE_FILES;
 
     private s3Client: S3Client | null = null;
     private bucket = "";
@@ -33,7 +33,7 @@ export class AwsS3Service extends Service implements IAwsS3Service {
     private runtime: IAgentRuntime | null = null;
 
     async initialize(runtime: IAgentRuntime): Promise<void> {
-        elizaLogger.log("Initializing AwsS3Service");
+        logger.log("Initializing AwsS3Service");
         this.runtime = runtime;
         this.fileUploadPath = runtime.getSetting("AWS_S3_UPLOAD_PATH") ?? "";
     }

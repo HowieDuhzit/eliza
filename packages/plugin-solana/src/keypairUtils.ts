@@ -1,5 +1,4 @@
 import { Keypair, PublicKey } from "@solana/web3.js";
-import { DeriveKeyProvider, TEEMode } from "@elizaos/plugin-tee";
 import bs58 from "bs58";
 import { type IAgentRuntime, elizaLogger } from "@elizaos/core";
 
@@ -18,28 +17,6 @@ export async function getWalletKey(
     runtime: IAgentRuntime,
     requirePrivateKey = true
 ): Promise<KeypairResult> {
-    const teeMode = runtime.getSetting("TEE_MODE") || TEEMode.OFF;
-
-    if (teeMode !== TEEMode.OFF) {
-        const walletSecretSalt = runtime.getSetting("WALLET_SECRET_SALT");
-        if (!walletSecretSalt) {
-            throw new Error(
-                "WALLET_SECRET_SALT required when TEE_MODE is enabled"
-            );
-        }
-
-        const deriveKeyProvider = new DeriveKeyProvider(teeMode);
-        const deriveKeyResult = await deriveKeyProvider.deriveEd25519Keypair(
-            walletSecretSalt,
-            "solana",
-            runtime.agentId
-        );
-
-        return requirePrivateKey
-            ? { keypair: deriveKeyResult.keypair }
-            : { publicKey: deriveKeyResult.keypair.publicKey };
-    }
-
     // TEE mode is OFF
     if (requirePrivateKey) {
         const privateKeyString =
@@ -74,7 +51,7 @@ export async function getWalletKey(
             runtime.getSetting("WALLET_PUBLIC_KEY");
 
         if (!publicKeyString) {
-            throw new Error("Public key not found in settings");
+            throw new Error("Solana Public key not found in settings, but plugin was loaded, please set SOLANA_PUBLIC_KEY");
         }
 
         return { publicKey: new PublicKey(publicKeyString) };

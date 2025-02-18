@@ -29,7 +29,7 @@ const createStream = () => {
     });
 };
 
-const defaultLevel = process?.env?.DEFAULT_LOG_LEVEL || "info";
+const defaultLevel = process?.env?.DEFAULT_LOG_LEVEL || process?.env?.LOG_LEVEL || "info";
 
 const options = {
     level: defaultLevel,
@@ -67,6 +67,9 @@ const options = {
     },
 };
 
-export const elizaLogger = pino(options, createStream());
+export const logger = pino(options, createStream());
 
-export default elizaLogger;
+// for backward compatibility
+export const elizaLogger = logger;
+
+export default logger;

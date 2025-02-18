@@ -1,10 +1,10 @@
-import { embed, getEmbeddingZeroVector } from "./embedding.ts";
-import elizaLogger from "./logger.ts";
-import type {
-    IAgentRuntime,
-    IMemoryManager,
-    Memory,
-    UUID,
+import logger from "./logger.ts";
+import {
+    ModelClass,
+    type IAgentRuntime,
+    type IMemoryManager,
+    type Memory,
+    type UUID,
 } from "./types.ts";
 
 const defaultMatchThreshold = 0.1;
@@ -66,11 +66,11 @@ export class MemoryManager implements IMemoryManager {
 
         try {
             // Generate embedding from text content
-            memory.embedding = await embed(this.runtime, memoryText);
+            memory.embedding = await this.runtime.useModel(ModelClass.TEXT_EMBEDDING, memoryText);
         } catch (error) {
-            elizaLogger.error("Failed to generate embedding:", error);
+            logger.error("Failed to generate embedding:", error);
             // Fallback to zero vector if embedding fails
-            memory.embedding = getEmbeddingZeroVector().slice();
+            memory.embedding = await this.runtime.useModel(ModelClass.TEXT_EMBEDDING, null);
         }
 
         return memory;
@@ -134,17 +134,19 @@ export class MemoryManager implements IMemoryManager {
      * @param opts.unique Whether to retrieve unique memories only.
      * @returns A Promise resolving to an array of Memory objects that match the embedding.
      */
-    async searchMemoriesByEmbedding(
-        embedding: number[],
+    async searchMemories(
         opts: {
+            embedding: number[],
             match_threshold?: number;
             count?: number;
             roomId: UUID;
+            agentId: UUID;
             unique?: boolean;
         }
     ): Promise<Memory[]> {
         const {
             match_threshold = defaultMatchThreshold,
+            embedding,
             count = defaultMatchCount,
             roomId,
             unique,
@@ -156,7 +158,7 @@ export class MemoryManager implements IMemoryManager {
             agentId: this.runtime.agentId,
             embedding: embedding,
             match_threshold: match_threshold,
-            match_count: count,
+            count,
             unique: !!unique,
         });
 
@@ -176,11 +178,16 @@ export class MemoryManager implements IMemoryManager {
             await this.runtime.databaseAdapter.getMemoryById(memory.id);
 
         if (existingMessage) {
-            elizaLogger.debug("Memory already exists, skipping");
+            logger.debug("Memory already exists, skipping");
             return;
         }
 
-        elizaLogger.log("Creating Memory", memory.id, memory.content.text);
+        logger.log("Creating Memory", memory.id, memory.content.text);
+
+        if(!memory.embedding){
+            const embedding = await this.runtime.useModel(ModelClass.TEXT_EMBEDDING, null);
+            memory.embedding = embedding;
+        }
 
         await this.runtime.databaseAdapter.createMemory(
             memory,

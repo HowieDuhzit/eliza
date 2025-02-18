@@ -7,7 +7,6 @@ node_modules
 .env_main
 concatenated-output.ts
 embedding-cache.json
-packages/plugin-buttplug/intiface-engine
 
 node-compile-cache
 
@@ -50,16 +49,12 @@ characters/**/*.env
 characters/**/*.key
 characters/**/private/
 
-packages/core/src/providers/cache
-packages/core/src/providers/cache/*
 cache/*
-packages/plugin-coinbase/src/plugins/transactions.csv
 
 tsup.config.bundled_*.mjs
 
 .turbo
 .cursorrules
-.pnpm-store
 instructions.md
 wallet_data.txt
 
@@ -72,23 +67,30 @@ eliza.manifest
 eliza.manifest.sgx
 eliza.sig
 
-packages/plugin-nvidia-nim/extra
-packages/plugin-nvidia-nim/old_code
-packages/plugin-nvidia-nim/docs
-
 # Edriziai specific ignores
 characters/edriziai-info/secrets.json
-
-# Bug Hunter logs and checkpoints
-scripts/bug_hunt/logs/
-scripts/bug_hunt/logs/*.log
-scripts/bug_hunt/checkpoints/
-scripts/bug_hunt/checkpoints/*.json
-scripts/bug_hunt/reports/
-scripts/bug_hunt/reports/*.md
 
 lit-config.json
 
 # Configuration to exclude the extra and local_docs directories
 extra
 **/dist/**
+
+ton_nft_metadata/
+ton_nft_metadata/*
+
+ton_nft_images/
+ton_nft_images/*
+
+packages/docs/api/*
+packages/*/dist/*
+
+
+**/dist/**
+
+**/.docusaurus/**
+**/docs/build/**
+
+**lock**
+
+packages/agent/local_**

@@ -10,7 +10,6 @@ describe("composeContext", () => {
         recentMessagesData: [],
         roomId: "-----",
         bio: "",
-        lore: "",
         messageDirections: "",
         postDirections: "",
         userName: "",
@@ -98,7 +97,7 @@ describe("composeContext", () => {
                     return "Hello, {{userName}}! You are {{userAge}} years old... whatever";
                 }
 
-                return `Hello, {{userName}}! You are {{userAge}} years old`;
+                return "Hello, {{userName}}! You are {{userAge}} years old";
             };
 
             const result = composeContext({ state, template });
@@ -111,10 +110,10 @@ describe("composeContext", () => {
         it("should handle function templates with conditional logic depending on state", () => {
             const template = ({ state }: { state: State }) => {
                 if (state.userName) {
-                    return `Hello, {{userName}}! You are {{userAge}} years old.`;
+                    return "Hello, {{userName}}! You are {{userAge}} years old.";
                 }
 
-                return `Hello, anon! You are {{userAge}} years old.`;
+                return "Hello, anon! You are {{userAge}} years old.";
             };
 
             const result = composeContext({
@@ -147,13 +146,12 @@ describe("composeContext", () => {
                 userAge: 30,
             };
             const template = () => {
-                return `{{#if userAge}}Hello, {{userName}}!{{else}}Hi there!{{/if}}`;
+                return "{{#if userAge}}Hello, {{userName}}!{{else}}Hi there!{{/if}}";
             };
 
             const result = composeContext({
                 state,
                 template,
-                templatingEngine: "handlebars",
             });
 
             expect(result).toBe("Hello, Alice!");
@@ -174,7 +172,6 @@ describe("composeContext", () => {
             const result = composeContext({
                 state,
                 template,
-                templatingEngine: "handlebars",
             });
 
             expect(result).toBe("Hello, Alice! You are 30 years old.");
@@ -192,7 +189,6 @@ describe("composeContext", () => {
             const result = composeContext({
                 state,
                 template,
-                templatingEngine: "handlebars",
             });
 
             expect(result).toBe("Age: 30");
@@ -209,7 +205,6 @@ describe("composeContext", () => {
             const result = composeContext({
                 state,
                 template,
-                templatingEngine: "handlebars",
             });
 
             expect(result).toBe("red, blue, green");
@@ -238,7 +233,6 @@ describe("composeContext", () => {
             const result = composeContext({
                 state,
                 template,
-                templatingEngine: "handlebars",
             });
 
             expect(result.trim()).toMatch(/Hello, Alice! You are an adult./);
@@ -254,7 +248,6 @@ describe("composeContext", () => {
             const result = composeContext({
                 state,
                 template,
-                templatingEngine: "handlebars",
             });
 
             expect(result).toBe("Hello, !");

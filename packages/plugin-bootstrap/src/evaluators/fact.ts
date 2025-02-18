@@ -1,6 +1,7 @@
 import { composeContext } from "@elizaos/core";
 import { generateObjectArray } from "@elizaos/core";
 import { MemoryManager } from "@elizaos/core";
+import { z } from "zod";
 import {
     type ActionExample,
     type IAgentRuntime,
@@ -19,7 +20,7 @@ export const formatFacts = (facts: Memory[]) => {
 
 const factsTemplate =
     // {{actors}}
-    `TASK: Extract Claims from the conversation as an array of claims in JSON format.
+    `# Task: Extract Claims from the conversation
 
 # START OF EXAMPLES
 These are examples of the expected output of this task:
@@ -51,6 +52,16 @@ Response should be a JSON object array inside a JSON markdown block. Correct res
 ]
 \`\`\``;
 
+// Updated schema with an explicit type cast to bypass mismatches between Zod versions.
+const claimSchema = (z.array(
+    z.object({
+        claim: z.string(),
+        type: z.enum(["fact", "opinion", "status"]),
+        in_bio: z.boolean(),
+        already_known: z.boolean(),
+    })
+) as unknown) as any;
+
 async function handler(runtime: IAgentRuntime, message: Memory) {
     const state = await runtime.composeState(message);
 
@@ -64,7 +75,10 @@ async function handler(runtime: IAgentRuntime, message: Memory) {
     const facts = await generateObjectArray({
         runtime,
         context,
-        modelClass: ModelClass.LARGE,
+        modelClass: ModelClass.TEXT_LARGE,
+        schema: claimSchema,
+        schemaName: "Fact",
+        schemaDescription: "A fact about the user or the world",
     });
 
     const factsManager = new MemoryManager({
@@ -91,7 +105,7 @@ async function handler(runtime: IAgentRuntime, message: Memory) {
 
     for (const fact of filteredFacts) {
         const factMemory = await factsManager.addEmbeddingToMemory({
-            userId: agentId!,
+            userId: agentId,
             agentId,
             content: { text: fact },
             roomId,

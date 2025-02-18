@@ -1,230 +1,136 @@
-# @elizaos/plugin-tee
+# TEE Log Plugin for Eliza
 
-A plugin for handling Trusted Execution Environment (TEE) operations, providing secure key derivation and remote attestation capabilities.
+The TEE Log Plugin for Eliza is designed to enhance the logging capabilities of the Eliza by providing a structured way to generate, store and verify TEE (Trusted Execution Environment) logs for agents. This plugin ensures that all sensitive interactions are securely logged, providing a transparent and tamper-resistant record of all sensitive activities.
 
-## Overview
+## Background
 
-This plugin provides functionality to:
+As Eliza is a fully autonomous AI agent capable of running within a TEE, we need to demonstrate to the outside world that we are indeed operating within a TEE. This allows external parties to verify that our actions are protected by the TEE and that they are autonomously executed by Eliza, without any third-party interference. Therefore, it is necessary to leverage TEE's remote attestation and establish a TEE logging mechanism to prove that these operations are entirely and autonomously performed by Eliza within the TEE.
 
-- Generate secure keys within a TEE environment
-- Derive Ed25519 keypairs for Solana
-- Derive ECDSA keypairs for Ethereum
-- Generate remote attestation quotes
-- Manage wallet interactions with TEE-derived keys
+## Requirements
 
-## Installation
+Since the TEE Logging is based on the TEE, it is necessary to have a TEE enabled environment. Currently, we support Intel SGX (Gramine) and Intel TDX (dstack).
+- using Intel SGX (Gramine), you need to enable the plugin-sgx in the Eliza runtime, which is enabled in SGX env automatically.
+- using Intel TDX (dstack), you need to enable the plugin-tee in the Eliza runtime.
 
-```bash
-npm install @elizaos/plugin-tee
-```
+## TEE Logging Mechanism
 
-## Configuration
+## TEE Logging Mechanism
 
-The plugin requires the following environment variables:
+1. **Key Pair Generation and Attestation**:
+   - During startup, each agent generates a key pair and creates a remote attestation for the public key. The private key is securely stored in the TEE's encrypted memory. The agent's relevant information, along with the public key and attestation, is recorded in a local database. A new key pair is generated each time the agent is updated or restarted to ensure key security.
+
+2. **Log Recording**:
+   - For each log entry, basic information is recorded, including `agentId`, `roomId`, `userId`, `type`, `content`, and `timestamp`. This information is concatenated and signed using the agent's corresponding private key to ensure verifiability. The verification process follows this trust chain:
+     - Verify the attestation.
+     - Trust the public key contained in the attestation.
+     - Use the public key to verify the signature.
+     - Trust the complete log record.
+
+3. **Data Storage**:
+   - All log data must be stored in the TEE's encrypted file system in production environments. Storing data in plaintext is prohibited to prevent tampering.
+
+4. **Log Extraction for Verification**:
+   - Third parties can extract TEE logs for verification purposes. Two types of information can be extracted:
+     - **Agent Information**: This includes the agent's metadata, public key, and attestation, which can be used to verify the agent's public key.
+     - **Log Information**: Required logs can be extracted, with the agent's attestation and public key used to verify the signature, ensuring that each record remains untampered.
+
+5. **Integrity Protection**:
+   - When users extract TEE logs via the REST API, the results are hashed, and an attestation is generated. After extraction, users can verify the attestation by comparing the hash value contained within it to the extracted results, thereby ensuring the integrity of the data.
+
+## Services
+
+- **[TeeLogService]**: This service is responsible for generating and storing TEE logs for agents.
+
+### Class: TeeLogService
+
+The `TeeLogService` class implements the `ITeeLogService` interface and extends the `Service` class. It manages the logging of sensitive interactions within a Trusted Execution Environment (TEE).
+
+#### Methods
+
+- **getInstance()**: `TeeLogService`
+  - Returns the singleton instance of the `TeeLogService`.
+
+- **static get serviceType()**: `ServiceType`
+  - Returns the service type for TEE logging.
+
+- **async initialize(runtime: IAgentRuntime): Promise<void>**
+  - Initializes the TEE log service. It checks the runtime settings to configure the TEE type and enables logging if configured.
+
+- **async log(agentId: string, roomId: string, userId: string, type: string, content: string): Promise<boolean>**
+  - Logs an interaction with the specified parameters. Returns `false` if TEE logging is not enabled.
+
+- **async getAllAgents(): Promise<TeeAgent[]>**
+  - Retrieves all agents that have been logged. Returns an empty array if TEE logging is not enabled.
+
+- **async getAgent(agentId: string): Promise<TeeAgent | undefined>**
+  - Retrieves the details of a specific agent by their ID. Returns `undefined` if TEE logging is not enabled.
+
+- **async getLogs(query: TeeLogQuery, page: number, pageSize: number): Promise<PageQuery<TeeLog[]>>**
+  - Retrieves logs based on the provided query parameters. Returns an empty result if TEE logging is not enabled.
+
+- **async generateAttestation(userReport: string): Promise<string>**
+  - Generates an attestation based on the provided user report.
+
+### Storage
+
+The TEE logs are stored in a SQLite database, which is located at `./data/tee_log.sqlite`. The database is automatically created when the service is initialized.
+
+Important: You need to use the encrypted file system to store the database file in production, otherwise the database will be compromised. Since TEE only protects memory-in-use, the disk is not protected by the TEE. However, Many TEE development tools support the encrypted file system, for example, you can refer to the [Gramine Encrypted files](https://gramine.readthedocs.io/en/latest/manifest-syntax.html#encrypted-files) documentation for more information.
+
+### Usage
+
+To use the `TeeLogService`, ensure that the TEE environment is properly configured and initialized.
+
+Enable the TEE logging in the Eliza .env file:
 
 ```env
-TEE_MODE=LOCAL|DOCKER|PRODUCTION
-WALLET_SECRET_SALT=your_secret_salt  # Required for single agent deployments
-DSTACK_SIMULATOR_ENDPOINT=your-endpoint-url  # Optional, for simulator purposes
+TEE_LOG_ENABLED=true
 ```
 
-## Usage
+The logging isn't integrated for actions by default, you need to integrate the logging for the actions you want to log. For example, if you want to log the `Continue` action of plugin-bootstrap, you can do the following:
 
-Import and register the plugin in your Eliza configuration:
+First, add plugin-tee-log to the dependencies of plugin-bootstrap:
+
+```json
+"@elizaos/plugin-tee-log": "workspace:*",
+```
+
+Then, add the following code to the `Continue` action:
 
 ```typescript
-import { teePlugin } from "@elizaos/plugin-tee";
+import {
+    ServiceType,
+    ITeeLogService,
+} from "@elizaos/core";
 
-export default {
-    plugins: [teePlugin],
-    // ... other configuration
-};
+
+// In the handler of the action
+    handler: async (
+        runtime: IAgentRuntime,
+        message: Memory,
+        state: State,
+        options: any,
+        callback: HandlerCallback
+    ) => {
+        // Continue the action
+
+        // Log the action
+        const teeLogService = runtime
+            .getService<ITeeLogService>(ServiceType.TEE_LOG)
+            .getInstance();
+        if (teeLogService.log(
+                runtime.agentId,
+                message.roomId,
+                message.userId,
+                "The type of the log, for example, Action:CONTINUE",
+                "The content that you want to log"
+            )
+        ) {
+            console.log("Logged TEE log successfully");
+        }
+
+        // Continue the action
+    }
 ```
 
-## Features
-
-### DeriveKeyProvider
-
-The `DeriveKeyProvider` allows for secure key derivation within a TEE environment:
-
-```typescript
-import { DeriveKeyProvider } from "@elizaos/plugin-tee";
-
-// Initialize the provider
-const provider = new DeriveKeyProvider();
-
-// Derive a raw key
-const rawKey = await provider.rawDeriveKey(
-    "/path/to/derive",
-    "subject-identifier"
-);
-// rawKey is a DeriveKeyResponse that can be used for further processing
-const rawKeyArray = rawKey.asUint8Array();
-
-// Derive a Solana keypair (Ed25519)
-const solanaKeypair = await provider.deriveEd25519Keypair(
-    "/path/to/derive",
-    "subject-identifier"
-);
-
-// Derive an Ethereum keypair (ECDSA)
-const evmKeypair = await provider.deriveEcdsaKeypair(
-    "/path/to/derive",
-    "subject-identifier"
-);
-```
-
-### RemoteAttestationProvider
-
-The `RemoteAttestationProvider` generates remote attestations within a TEE environment:
-
-```typescript
-import { RemoteAttestationProvider } from "@elizaos/plugin-tee";
-
-const provider = new RemoteAttestationProvider();
-const attestation = await provider.generateAttestation("your-report-data");
-```
-
-## Development
-
-### Building
-
-```bash
-npm run build
-```
-
-### Testing
-
-```bash
-npm run test
-```
-
-## Local Development
-
-To get a TEE simulator for local testing, use the following commands:
-
-```bash
-docker pull phalanetwork/tappd-simulator:latest
-# by default the simulator is available in localhost:8090
-docker run --rm -p 8090:8090 phalanetwork/tappd-simulator:latest
-```
-
-## Dependencies
-
-- `@phala/dstack-sdk`: Core TEE functionality
-- `@solana/web3.js`: Solana blockchain interaction
-- `viem`: Ethereum interaction library
-- Other standard dependencies listed in package.json
-
-## API Reference
-
-### Providers
-
-- `deriveKeyProvider`: Manages secure key derivation within TEE
-- `remoteAttestationProvider`: Handles generation of remote attestation quotes
-- `walletProvider`: Manages wallet interactions with TEE-derived keys
-
-### Types
-
-```typescript
-enum TEEMode {
-    OFF = "OFF",
-    LOCAL = "LOCAL", // For local development with simulator
-    DOCKER = "DOCKER", // For docker development with simulator
-    PRODUCTION = "PRODUCTION", // For production without simulator
-}
-
-interface RemoteAttestationQuote {
-    quote: string;
-    timestamp: number;
-}
-```
-
-## Future Enhancements
-
-1. **Key Management**
-
-    - Advanced key derivation schemes
-    - Multi-party computation support
-    - Key rotation automation
-    - Backup and recovery systems
-    - Hardware security module integration
-    - Custom derivation paths
-
-2. **Remote Attestation**
-
-    - Enhanced quote verification
-    - Multiple TEE provider support
-    - Automated attestation renewal
-    - Policy management system
-    - Compliance reporting
-    - Audit trail generation
-
-3. **Security Features**
-
-    - Memory encryption improvements
-    - Side-channel protection
-    - Secure state management
-    - Access control systems
-    - Threat detection
-    - Security monitoring
-
-4. **Chain Integration**
-
-    - Multi-chain support expansion
-    - Cross-chain attestation
-    - Chain-specific optimizations
-    - Custom signing schemes
-    - Transaction privacy
-    - Bridge security
-
-5. **Developer Tools**
-
-    - Enhanced debugging capabilities
-    - Testing framework
-    - Simulation environment
-    - Documentation generator
-    - Performance profiling
-    - Integration templates
-
-6. **Performance Optimization**
-    - Parallel processing
-    - Caching mechanisms
-    - Resource management
-    - Latency reduction
-    - Throughput improvements
-    - Load balancing
-
-We welcome community feedback and contributions to help prioritize these enhancements.
-
-## Contributing
-
-Contributions are welcome! Please see the [CONTRIBUTING.md](CONTRIBUTING.md) file for more information.
-
-## Credits
-
-This plugin integrates with and builds upon several key technologies:
-
-- [Phala Network](https://phala.network/): Confidential smart contract platform
-- [@phala/dstack-sdk](https://www.npmjs.com/package/@phala/dstack-sdk): Core TEE functionality
-- [@solana/web3.js](https://www.npmjs.com/package/@solana/web3.js): Solana blockchain interaction
-- [viem](https://www.npmjs.com/package/viem): Ethereum interaction library
-- [Intel SGX](https://www.intel.com/content/www/us/en/developer/tools/software-guard-extensions/overview.html): Trusted Execution Environment technology
-
-Special thanks to:
-
-- The Phala Network team for their TEE infrastructure
-- The Intel SGX team for TEE technology
-- The dStack SDK maintainers
-- The Eliza community for their contributions and feedback
-
-For more information about TEE capabilities:
-
-- [Phala Documentation](https://docs.phala.network/)
-- [Intel SGX Documentation](https://www.intel.com/content/www/us/en/developer/tools/software-guard-extensions/documentation.html)
-- [TEE Security Best Practices](https://docs.phala.network/developers/phat-contract/security-notes)
-- [dStack SDK Reference](https://docs.phala.network/developers/dstack-sdk)
-
-## License
-
-This plugin is part of the Eliza project. See the main project repository for license information.
+After configuring the logging for the action, you can run the Eliza and see the logs through the client-direct REST API. See more details in the [Client-Direct REST API](../client-direct/src/README.md) documentation.
