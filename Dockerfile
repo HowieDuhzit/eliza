@@ -78,4 +78,4 @@ COPY --from=builder /app/eliza/characters ./characters
 EXPOSE 3000 5173
 
 # Command to start the application
-CMD ["sh", "-c", "pnpm start & pnpm start:client"]
+CMD ["sh", "-c", "pnpm start & pnpm start:client --host"]
