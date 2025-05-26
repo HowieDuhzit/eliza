@@ -34,4 +34,4 @@ cmds = ['bun run build']
 cacheDirectories = ['node_modules/.cache']
 
 [start]
-cmd = 'bun start'
+cmd = 'bun run dev'
