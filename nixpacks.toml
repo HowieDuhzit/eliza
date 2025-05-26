@@ -7,7 +7,7 @@ NIXPACKS_PATH = '/usr/local/bin:/usr/bin:/bin'
 
 [phases.setup]
 nixPkgs = [
-  'nodejs_24',
+  'nodejs_23',
   'bun',
 ]
 nixLibs = [
