@@ -24,14 +24,14 @@ aptPkgs = [
 
 [phases.install]
 dependsOn = ['setup']
-cmds = ['bun install']
+cmds = ['npm install']
 cacheDirectories = ['/root/.bun']
 paths = ['/app/node_modules/.bin']
 
 [phases.build]
 dependsOn = ['install']
-cmds = ['bun run build']
+cmds = ['npm run build']
 cacheDirectories = ['node_modules/.cache']
 
 [start]
-cmd = 'bun run dev'
+cmd = 'npm run dev'
