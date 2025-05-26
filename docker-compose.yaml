@@ -1,24 +1,26 @@
-version: '3'
+version: '3.8'
+
 services:
   postgres:
     image: ankane/pgvector:latest
     environment:
-      - POSTGRES_PASSWORD=postgres
-      - POSTGRES_USER=postgres
-      - POSTGRES_DB=eliza
-      - PGDATA=/var/lib/postgresql/data/pgdata
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_USER: postgres
+      POSTGRES_DB: eliza
+      PGDATA: /var/lib/postgresql/data/pgdata
     volumes:
       - postgres-data:/var/lib/postgresql/data:rw
     ports:
-      - '127.0.0.1:5432:5432'
+      - '5432:5432'  # Coolify maps this automatically if needed
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}']
+      test: ['CMD-SHELL', 'pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB']
       interval: 5s
       timeout: 5s
       retries: 5
     restart: always
     networks:
       - eliza-network
+
   eliza:
     build:
       context: .
@@ -26,16 +28,16 @@ services:
     container_name: elizav2
     command: bun run start
     volumes:
-      - /var/run/tappd.sock:/var/run/tappd.sock
+      - /var/run/tappd.sock:/var/run/tappd.sock  # Only if this is available inside Coolify host
     environment:
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
-      - SERVER_PORT=${SERVER_PORT}
-      - POSTGRES_URL=${POSTGRES_URL}
-      - EVM_CHAINS=${EVM_CHAINS}
-      - BIRDEYE_API_KEY=${BIRDEYE_API_KEY}
-      - DISCORD_APPLICATION_ID=${DISCORD_APPLICATION_ID}
-      - DISCORD_API_TOKEN=${DISCORD_API_TOKEN}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      SERVER_PORT: ${SERVER_PORT:-3000}
+      POSTGRES_URL: ${POSTGRES_URL:-postgres://postgres:postgres@postgres:5432/eliza}
+      EVM_CHAINS: ${EVM_CHAINS}
+      BIRDEYE_API_KEY: ${BIRDEYE_API_KEY}
+      DISCORD_APPLICATION_ID: ${DISCORD_APPLICATION_ID}
+      DISCORD_API_TOKEN: ${DISCORD_API_TOKEN}
     ports:
       - '3000:3000'
       - '50000-50100:50000-50100/udp'
